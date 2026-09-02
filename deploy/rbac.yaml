@@ -1,0 +1,67 @@
+# RBAC for running chatops-agent inside the cluster (e.g. as the future
+# Slack bot deployment). For the CLI running on your laptop against a
+# kubeconfig, this isn't needed - your own kubeconfig permissions apply
+# instead.
+#
+# Two roles, intentionally split:
+#   chatops-agent-reader : broad read access, safe to grant widely
+#   chatops-agent-writer : narrow write access (scale only), and even
+#                           with this bound, the agent itself still
+#                           requires interactive confirmation before
+#                           calling k8s_scale_deployment.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: chatops-agent
+  namespace: chatops
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: chatops-agent-reader
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "events", "namespaces"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: chatops-agent-writer
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments/scale"]
+    verbs: ["get", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: chatops-agent-reader-binding
+subjects:
+  - kind: ServiceAccount
+    name: chatops-agent
+    namespace: chatops
+roleRef:
+  kind: ClusterRole
+  name: chatops-agent-reader
+  apiGroup: rbac.authorization.k8s.io
+---
+# Bind the writer role only to the namespaces you actually want the agent
+# to be able to scale in. Duplicate this RoleBinding per-namespace rather
+# than making chatops-agent-writer a ClusterRoleBinding.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: chatops-agent-writer-binding
+  namespace: staging
+subjects:
+  - kind: ServiceAccount
+    name: chatops-agent
+    namespace: chatops
+roleRef:
+  kind: ClusterRole
+  name: chatops-agent-writer
+  apiGroup: rbac.authorization.k8s.io
